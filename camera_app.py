@@ -52,7 +52,8 @@ DEFAULTS = {
     "split_minutes": 10,
     "motion_only": False,
     "timestamp": True,
-    "auto_record": False,
+    "auto_connect": True,        # show live video + listen for triggers on start
+    "record_on_start": False,    # start recording on start (normally wait for a trigger)
     "file_name": "",
     "tcp_enabled": True,
     "tcp_port": 5000,
@@ -87,8 +88,8 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(APP_NAME)
-        self.geometry("1280x820")
-        self.minsize(1000, 700)
+        self.geometry("1280x880")
+        self.minsize(1000, 780)
         self.settings = load_settings()
         self.worker = None
         self._photo = None
@@ -100,8 +101,8 @@ class App(tk.Tk):
         self._build_ui()
         self.protocol("WM_DELETE_WINDOW", self.on_close)
         self.after(40, self._refresh)
-        if self.settings["auto_record"] and self.settings["password"]:
-            self.after(300, self.connect)
+        if self.settings["auto_connect"]:
+            self.after(300, self._startup_connect)
         if self.settings["tcp_enabled"]:
             self.after(200, self.start_server)
         if self.settings["file_trigger_enabled"]:
@@ -148,7 +149,8 @@ class App(tk.Tk):
         self.v_split = tk.IntVar(value=s["split_minutes"])
         self.v_motion = tk.BooleanVar(value=s["motion_only"])
         self.v_stamp = tk.BooleanVar(value=s["timestamp"])
-        self.v_auto = tk.BooleanVar(value=s["auto_record"])
+        self.v_auto = tk.BooleanVar(value=s["auto_connect"])
+        self.v_rec_start = tk.BooleanVar(value=s["record_on_start"])
 
         ttk.Label(rec, text="Save folder").grid(row=0, column=0, columnspan=2, sticky="w")
         ttk.Entry(rec, textvariable=self.v_dir, width=28).grid(row=1, column=0, sticky="ew")
@@ -164,8 +166,10 @@ class App(tk.Tk):
                         command=self._apply_options).grid(row=5, column=0, columnspan=2, sticky="w", pady=(6, 0))
         ttk.Checkbutton(rec, text="Show date/time on video", variable=self.v_stamp,
                         command=self._apply_options).grid(row=6, column=0, columnspan=2, sticky="w")
-        ttk.Checkbutton(rec, text="Connect & record when app starts", variable=self.v_auto,
+        ttk.Checkbutton(rec, text="Connect when app starts", variable=self.v_auto,
                         ).grid(row=7, column=0, columnspan=2, sticky="w")
+        ttk.Checkbutton(rec, text="Also start recording when app starts", variable=self.v_rec_start,
+                        ).grid(row=8, column=0, columnspan=2, sticky="w")
 
         self.btn_record = ttk.Button(side, text="⏺  Start recording", command=self.toggle_record,
                                      state=tk.DISABLED)
@@ -227,7 +231,8 @@ class App(tk.Tk):
             user=self.v_user.get().strip(), password=self.v_pass.get(),
             stream=self.v_stream.get(), custom_url=self.v_custom.get().strip(),
             save_dir=self.v_dir.get().strip() or DEFAULTS["save_dir"], split_minutes=max(0, split),
-            motion_only=self.v_motion.get(), timestamp=self.v_stamp.get(), auto_record=self.v_auto.get(),
+            motion_only=self.v_motion.get(), timestamp=self.v_stamp.get(), auto_connect=self.v_auto.get(),
+            record_on_start=self.v_rec_start.get(),
             file_name=self.v_name.get().strip(), tcp_enabled=self.v_tcp.get(),
             file_trigger_enabled=self.v_ftrig.get(), trigger_file=self.v_tfile.get().strip(),
         )
@@ -265,13 +270,20 @@ class App(tk.Tk):
         save_settings(s)
         self.worker = CameraWorker(self._url())
         self._apply_options()
-        if s["auto_record"]:
-            self.worker.start_recording(s["save_dir"], s["file_name"])
         self.worker.start()
         self.btn_connect.config(text="⏹  Disconnect")
         self.btn_record.config(state=tk.NORMAL)
         self.btn_snap.config(state=tk.NORMAL)
         self.video.config(image="", text="Connecting...")
+
+    def _startup_connect(self):
+        """On app start: connect (live view). Record only if that option is ticked."""
+        if self.worker is None:
+            self.connect()
+        if self.settings["record_on_start"]:
+            self.start_recording()
+        else:
+            self._log("Connected on start-up — waiting for START (button, TCP or file trigger)")
 
     def disconnect(self):
         if self.worker:

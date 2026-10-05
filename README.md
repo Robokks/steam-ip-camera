@@ -53,7 +53,8 @@ A desktop app with live preview and one-click recording.
 - Start / stop recording, snapshots
 - Record only when motion is detected (3 s pre-roll)
 - New file every N minutes, date/time on video
-- Optional auto connect & record when the app starts
+- **Connect when app starts** (on by default): opens straight to live view and listens for TCP or file triggers, **without recording**
+- **Also start recording when app starts** (off by default)
 - Settings are remembered (`%APPDATA%\IPCameraRecorder\settings.json`)
 
 **Run from source:** `pip install -r requirements.txt` then `python camera_app.py`
