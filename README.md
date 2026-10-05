@@ -66,3 +66,12 @@ python ip_camera_recorder.py "rtsp://..." --record --duration 3600
 | Android IP Webcam | `http://IP:8080/video` |
 
 Tip: quote the URL in the shell if it contains `&` or `?`. If the password contains special characters such as `@`, URL-encode them (`@` → `%40`).
+
+## Matrix camera recorder (`matrix_record.py`)
+A simpler script with three modes: `continuous` (24x7, split files), `timed` and `motion`.
+```bash
+CAM_IP=192.168.1.100 CAM_USER=admin CAM_PASS=secret python matrix_record.py continuous 10
+python matrix_record.py timed 300
+python matrix_record.py motion            # 3 s pre-roll, stops 10 s after motion ends
+```
+Set `CAM_URL` to use a full custom RTSP URL.
