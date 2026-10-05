@@ -11,6 +11,14 @@ from datetime import datetime
 
 import cv2
 
+_BAD_CHARS = '<>:"/\\|?*'
+
+
+def clean_filename(name):
+    """Make a user/remote supplied file name safe; drops any extension."""
+    name = os.path.splitext(os.path.basename(str(name).strip()))[0]
+    return "".join("_" if c in _BAD_CHARS or ord(c) < 32 else c for c in name).strip(" .")
+
 os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp|timeout;5000000")
 
 
@@ -37,6 +45,9 @@ class CameraWorker(threading.Thread):
         self.timestamp = True
         self.split_minutes = 10
         self.save_dir = "."
+        self._next_path = ""     # path for the next file of the current recording
+        self._base = ""          # base name of the current recording
+        self._part = 0
 
         # Status read by the GUI thread.
         self.status = "Connecting..."
@@ -58,6 +69,36 @@ class CameraWorker(threading.Thread):
 
     def stop(self):
         self._stop_event.set()
+
+    def start_recording(self, save_dir=None, file_name=""):
+        """Arm recording and return the path the (first) file will have.
+
+        file_name is optional; without it a timestamped name is used.
+        Long recordings are split into <name>_part2.mp4, _part3 ...
+        """
+        if save_dir:
+            self.save_dir = str(save_dir)
+        base = clean_filename(file_name) if file_name else ""
+        if not base:
+            prefix = "motion" if self.motion_only else "cam"
+            base = f"{prefix}_{datetime.now():%Y%m%d_%H%M%S}"
+        path = os.path.join(self.save_dir, base + ".mp4")
+        if os.path.exists(path):          # never overwrite an earlier recording
+            base = f"{base}_{datetime.now():%Y%m%d_%H%M%S}"
+            path = os.path.join(self.save_dir, base + ".mp4")
+        self._base, self._part, self._next_path = base, 0, path
+        self.record_on = True
+        return path
+
+    def stop_recording(self, timeout=3.0):
+        """Stop recording; wait until the file is closed and return its path."""
+        was_file = self.current_file
+        self.record_on = False
+        deadline = time.time() + timeout
+        while self.writing and time.time() < deadline:
+            time.sleep(0.02)
+        self._base, self._next_path = "", ""
+        return was_file or self.last_saved
 
     # ---- thread body ----
     def run(self):
@@ -136,7 +177,8 @@ class CameraWorker(threading.Thread):
             want = self.record_on
 
         if want and self._writer is None:
-            self._open_writer()
+            if not self._open_writer():
+                return
             while self._pre_buffer:
                 self._writer.write(self._pre_buffer.popleft())
         elif not want and self._writer is not None:
@@ -145,7 +187,8 @@ class CameraWorker(threading.Thread):
         if self._writer is not None:
             if self.split_minutes and now - self._file_started >= self.split_minutes * 60:
                 self._close_writer()
-                self._open_writer()
+                if not self._open_writer():
+                    return
             self._writer.write(frame)
         elif self.motion_only and self.record_on:
             maxlen = int(self.PRE_MOTION_SEC * self._fps)
@@ -154,18 +197,28 @@ class CameraWorker(threading.Thread):
                 self._pre_buffer.popleft()
 
     def _open_writer(self):
-        os.makedirs(self.save_dir, exist_ok=True)
-        prefix = "motion" if self.motion_only else "cam"
-        path = os.path.join(self.save_dir, f"{prefix}_{datetime.now():%Y%m%d_%H%M%S}.mp4")
-        writer = cv2.VideoWriter(path, cv2.VideoWriter_fourcc(*"mp4v"), self._fps, self._size)
-        if not writer.isOpened():
-            self.status = f"ERROR: cannot write to {self.save_dir}"
+        if not self._base:                       # armed by setting record_on directly
+            self.start_recording()
+        self._part += 1
+        if self._part == 1 and self._next_path:
+            path = self._next_path
+        else:
+            path = os.path.join(self.save_dir, f"{self._base}_part{self._part}.mp4")
+        try:
+            os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+            writer = cv2.VideoWriter(path, cv2.VideoWriter_fourcc(*"mp4v"), self._fps, self._size)
+            ok = writer.isOpened()
+        except OSError:
+            ok = False
+        if not ok:
+            self.status = f"ERROR: cannot write {path}"
             self.record_on = False
-            return
+            return False
         self._writer = writer
         self._file_started = time.time()
         self.current_file = path
         self.writing = True
+        return True
 
     def _close_writer(self):
         if self._writer is not None:
@@ -178,7 +231,9 @@ class CameraWorker(threading.Thread):
 
 def draw_timestamp(frame):
     text = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    scale = max(0.6, frame.shape[1] / 1600)
-    org = (10, frame.shape[0] - 15)
-    cv2.putText(frame, text, org, cv2.FONT_HERSHEY_SIMPLEX, scale, (0, 0, 0), 4, cv2.LINE_AA)
-    cv2.putText(frame, text, org, cv2.FONT_HERSHEY_SIMPLEX, scale, (255, 255, 255), 1, cv2.LINE_AA)
+    scale = max(0.5, frame.shape[1] / 1600)
+    thick = max(1, round(scale * 2))
+    (tw, th), base = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, scale, thick)
+    x, y = 10, frame.shape[0] - 12
+    cv2.rectangle(frame, (x - 5, y - th - 6), (x + tw + 5, y + base + 2), (0, 0, 0), -1)
+    cv2.putText(frame, text, (x, y), cv2.FONT_HERSHEY_SIMPLEX, scale, (255, 255, 255), thick, cv2.LINE_AA)

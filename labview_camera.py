@@ -15,7 +15,7 @@ ONE Python session open for the whole VI run:
 Functions                                   LabVIEW return type
     connect(url)                            String
     disconnect()                            String
-    start_recording(save_dir, split_minutes, motion_only)   String
+    start_recording(save_dir, split_minutes, motion_only, file_name)   String (file path)
     stop_recording()                        String  (path of last saved file)
     snapshot(save_dir)                      String  (path of the JPEG)
     get_status()                            String
@@ -63,26 +63,23 @@ def disconnect():
     return f"Disconnected. Last file: {saved}" if saved else "Disconnected"
 
 
-def start_recording(save_dir, split_minutes=10, motion_only=False):
-    """Start recording into save_dir. split_minutes=0 means one file."""
+def start_recording(save_dir, split_minutes=10, motion_only=False, file_name=""):
+    """Start recording into save_dir. Returns the file path that will be written.
+
+    split_minutes=0 means one file. file_name is optional (no extension needed).
+    """
     if _worker is None:
         return "ERROR: not connected"
-    _worker.save_dir = str(save_dir)
     _worker.split_minutes = max(0, int(split_minutes))
     _worker.motion_only = bool(motion_only)
-    _worker.record_on = True
-    return "Waiting for motion..." if motion_only else "Recording"
+    return _worker.start_recording(str(save_dir), str(file_name or ""))
 
 
 def stop_recording():
     """Stop recording. Returns the path of the file that was saved."""
     if _worker is None:
         return ""
-    _worker.record_on = False
-    deadline = time.time() + 3
-    while _worker.writing and time.time() < deadline:
-        time.sleep(0.05)
-    return _worker.last_saved
+    return _worker.stop_recording()
 
 
 def snapshot(save_dir):
@@ -157,7 +154,7 @@ if __name__ == "__main__":
             break
         time.sleep(0.2)
     print(get_status())
-    print(start_recording("recordings", 1, False))
+    print(start_recording("recordings", 1, False, "labview_test"))
     time.sleep(5)
     print("Saved:", stop_recording())
     print("Snapshot:", snapshot("recordings"))

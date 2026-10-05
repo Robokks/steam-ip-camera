@@ -3,6 +3,32 @@
 ## LabVIEW
 See [LABVIEW.md](LABVIEW.md). LabVIEW calls `labview_camera.py` through the Python Node.
 
+## TCP remote control (start/stop trigger)
+The Windows app runs a TCP server (default port **5000**, can be switched on or off in the app).
+Send one ASCII command per line. The app answers with one line ending in CR LF:
+
+| Send | Reply |
+|---|---|
+| `PING` | `OK PONG` |
+| `START` | `OK START;<file path>` (uses the folder and name set in the app) |
+| `START;C:\Recordings;Test_001` | `OK START;C:\Recordings\Test_001.mp4` |
+| `START;;Test_002` | empty field = folder set in the app |
+| `STOP` | `OK STOP;<saved file path>` (sent after the file is closed) |
+| `STATUS` | `OK RECORDING;<path>` / `OK IDLE` / `OK WAITING_MOTION` / `OK CONNECTING` / `OK DISCONNECTED` |
+| `SNAPSHOT;C:\Pics;part_17` | `OK SNAPSHOT;C:\Pics\part_17.jpg` |
+| `CONNECT` / `DISCONNECT` | `OK CONNECT` / `OK DISCONNECT` |
+| anything wrong | `ERROR <reason>` (e.g. `ERROR ALREADY RECORDING;<path>`, `ERROR NOT RECORDING`) |
+
+- `START` connects to the camera automatically if needed.
+- An existing file is never overwritten; a date/time is added to the name instead.
+- Long recordings are split as `<name>.mp4`, `<name>_part2.mp4`, …
+- Characters not allowed in Windows file names are replaced with `_`.
+- The manual buttons in the app keep working alongside TCP.
+
+Test from a command prompt: `python tcp_client.py START C:\Recordings Test_001`, then `python tcp_client.py STOP`.
+In LabVIEW: TCP Open Connection → TCP Write `START;C:\Recordings;Test_001\r\n` → TCP Read (mode **CRLF**) → TCP Close Connection.
+See [LABVIEW.md](LABVIEW.md#tcp-remote-control-from-labview).
+
 ## Windows app (`camera_app.py`)
 A desktop app with live preview and one-click recording.
 

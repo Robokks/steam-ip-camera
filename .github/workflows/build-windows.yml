@@ -25,13 +25,16 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install VLC
-        run: choco install vlc -y --no-progress
+      - name: Install VLC and FFmpeg
+        run: choco install vlc ffmpeg -y --no-progress
       - name: Make a test video
-        run: ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc=size=640x360:rate=25 -t 60 -c:v libx264 -pix_fmt yuv420p "$env:RUNNER_TEMP\src.mp4"
+        run: |
+          $env:Path += ";C:\ProgramData\chocolatey\bin"
+          ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc=size=640x360:rate=25 -t 60 -c:v libx264 -pix_fmt yuv420p "$env:RUNNER_TEMP\src.mp4"
       - name: Start, record 6 s, stop
         shell: pwsh
         run: |
+          $env:Path += ";C:\ProgramData\chocolatey\bin"
           $out = "$env:RUNNER_TEMP\rec"
           $file = powershell -NoProfile -ExecutionPolicy Bypass -File labview\vlc_record.ps1 start -Url "$env:RUNNER_TEMP\src.mp4" -OutDir $out
           Write-Output "start -> $file"

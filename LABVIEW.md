@@ -1,5 +1,42 @@
 # Using the IP camera recorder from LabVIEW
 
+There are three ways to use it. The easiest is **TCP remote control**: run the
+Windows app (`camera_app.py` / `IPCameraRecorder.exe`) and send START and STOP
+from LabVIEW. LabVIEW then needs no Python and no VLC.
+
+## TCP remote control from LabVIEW
+Functions palette → **Data Communication → Protocols → TCP**
+
+```
+TCP Open Connection  (address "127.0.0.1" or the recorder PC's IP, port 5000, timeout 5000 ms)
+   → TCP Write  "START;C:\Recordings;Test_001" + CR LF     (use the "\r\n" constant, or Concatenate + CR + LF)
+   → TCP Read   bytes to read 512, mode = CRLF, timeout 10000 ms
+        reply = "OK START;C:\Recordings\Test_001.mp4"
+   ... later ...
+   → TCP Write  "STOP" + CR LF
+   → TCP Read   (CRLF)  reply = "OK STOP;C:\Recordings\Test_001.mp4"
+TCP Close Connection
+```
+
+- You can keep one connection open for the whole test, or open and close it for every command.
+- Check the reply: **Match Pattern** / **Scan From String** on `OK ` or `ERROR `. The part after `;` is the file path.
+- If the recorder runs on another PC, allow the app through Windows Firewall when
+  Windows asks the first time. Use port 5000, or the port set in the app.
+- Every command and reply is shown in the app's log box. This helps when debugging.
+
+| Command | Reply |
+|---|---|
+| `PING` | `OK PONG` |
+| `START;<folder>;<file name>` | `OK START;<path>`. Both fields are optional, so `START` alone is fine |
+| `STOP` | `OK STOP;<path>`. It is sent after the file is closed |
+| `STATUS` | `OK RECORDING;<path>` / `OK IDLE` / `OK WAITING_MOTION` / `OK CONNECTING` / `OK DISCONNECTED` |
+| `SNAPSHOT;<folder>;<file name>` | `OK SNAPSHOT;<path>` |
+| `CONNECT` / `DISCONNECT` | `OK CONNECT` / `OK DISCONNECT` |
+
+---
+
+# Python Node (no separate app)
+
 LabVIEW calls the Python functions in `labview_camera.py` with the **Python Node**
 (LabVIEW 2018 or newer). LabVIEW provides the buttons and display, and Python
 does the RTSP reading and recording in the background.
@@ -63,7 +100,7 @@ followed by **Read JPEG File → Draw Flattened Pixmap**.
 |---|---|---|
 | `connect` | url (String) | String |
 | `disconnect` | — | String |
-| `start_recording` | save_dir (String), split_minutes (I32), motion_only (Boolean) | String |
+| `start_recording` | save_dir (String), split_minutes (I32), motion_only (Boolean), file_name (String) | String: file path |
 | `stop_recording` | — | String: saved file path |
 | `snapshot` | save_dir (String) | String: jpg path |
 | `get_status` | — | String |
