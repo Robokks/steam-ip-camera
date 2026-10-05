@@ -75,3 +75,53 @@ followed by **Read JPEG File → Draw Flattened Pixmap**.
 If you only need to launch the desktop app, use **System Exec.vi** with
 `C:\path\IPCameraRecorder.exe` and set **Connect & record when app starts**
 in the app.
+
+---
+
+# VLC + LabVIEW: watch and record
+
+You can use VLC instead of Python. VLC shows the camera on the front panel, and
+`labview/vlc_record.ps1` records in the background. Both copy the camera's H.264
+stream without re-encoding, so CPU load stays low and the quality matches the camera.
+
+## 1. Setup
+1. Install **VLC 3.x** with the **ActiveX plugin** component ticked. Use the same bitness as LabVIEW.
+2. Copy `labview\vlc_record.ps1` next to your VI.
+
+## 2. Live view on the front panel (VLC ActiveX)
+1. Front panel: **Containers → ActiveX Container**. Right-click it → *Insert ActiveX Object* →
+   **VideoLAN VLC ActiveX Plugin v2**.
+2. Block diagram, using the container's reference:
+   - Property Node → `playlist` → Invoke Node `items.clear`
+   - Invoke Node `add`:
+     - uri = `rtsp://admin:admin@192.168.1.126:554/unicaststream/2` (the sub stream is enough for viewing)
+     - name = empty
+     - options = string array `[":rtsp-tcp", ":network-caching=300"]`
+   - Invoke Node `playItem` with the id that `add` returned
+3. When the VI stops, call `playlist.stop`.
+
+## 3. Recording (System Exec.vi)
+**Connectivity → Libraries & Executables → System Exec.vi**
+
+| Button | command line | wait until completion? |
+|---|---|---|
+| Start | `powershell -NoProfile -ExecutionPolicy Bypass -File "C:\path\vlc_record.ps1" start -OutDir "C:\CameraRecordings"` | **True** (returns in about 3 s) |
+| Stop | `powershell -NoProfile -ExecutionPolicy Bypass -File "C:\path\vlc_record.ps1" stop -OutDir "C:\CameraRecordings"` | True |
+| Status | `... vlc_record.ps1 status -OutDir "C:\CameraRecordings"` | True |
+
+- **standard output** of *start* is the path of the new file. Wire it to a string indicator.
+  A message starting with `ERROR:` means something failed.
+- The script records the main stream (`/unicaststream/1`, 1080p) by default.
+  Change it with `-Url "rtsp://..."`.
+- `-Minutes 10` makes VLC stop by itself after 10 minutes. For files that split
+  continuously, call Stop and then Start again every N minutes from a LabVIEW timer.
+- Recordings are `.ts` files, which stay playable even if the PC loses power. VLC and
+  most players open them.
+- The script stops only the VLC process it started. The front-panel ActiveX view and
+  any other VLC windows keep running.
+
+## Recording from the ActiveX view instead
+You can also record from the viewer itself: re-add the URL with a third option
+`:sout=#duplicate{dst=display,dst=std{access=file,mux=ts,dst='C:\CameraRecordings\cam.ts'}}`
+and call `playItem`. To stop, re-add the URL without `:sout`. The picture freezes for
+about 1 s each time, so the System Exec method above is usually smoother.

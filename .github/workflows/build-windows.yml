@@ -20,3 +20,26 @@ jobs:
         with:
           name: IPCameraRecorder-windows
           path: dist/IPCameraRecorder.exe
+
+  test-vlc-script:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install VLC
+        run: choco install vlc -y --no-progress
+      - name: Make a test video
+        run: ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc=size=640x360:rate=25 -t 60 -c:v libx264 -pix_fmt yuv420p "$env:RUNNER_TEMP\src.mp4"
+      - name: Start, record 6 s, stop
+        shell: pwsh
+        run: |
+          $out = "$env:RUNNER_TEMP\rec"
+          $file = powershell -NoProfile -ExecutionPolicy Bypass -File labview\vlc_record.ps1 start -Url "$env:RUNNER_TEMP\src.mp4" -OutDir $out
+          Write-Output "start -> $file"
+          if ($LASTEXITCODE -ne 0) { throw "start failed" }
+          Start-Sleep -Seconds 6
+          powershell -NoProfile -ExecutionPolicy Bypass -File labview\vlc_record.ps1 status -OutDir $out
+          powershell -NoProfile -ExecutionPolicy Bypass -File labview\vlc_record.ps1 stop -OutDir $out
+          $size = (Get-Item $file).Length
+          Write-Output "recorded $size bytes"
+          if ($size -lt 10000) { throw "recording too small" }
+          ffprobe -hide_banner -v error -show_entries format=duration -of csv=p=0 $file
