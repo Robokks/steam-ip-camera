@@ -16,7 +16,7 @@ from datetime import datetime
 # ─────────────────────────────────────────────
 #  Config
 # ─────────────────────────────────────────────
-CAM_IP    = os.getenv("CAM_IP", "192.168.1.100")
+CAM_IP    = os.getenv("CAM_IP", "192.168.1.126")
 USERNAME  = os.getenv("CAM_USER", "admin")
 PASSWORD  = os.getenv("CAM_PASS", "admin123")
 # Check your camera's manual / web UI for the exact RTSP path.
