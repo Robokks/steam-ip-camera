@@ -19,8 +19,8 @@ from datetime import datetime
 CAM_IP    = os.getenv("CAM_IP", "192.168.1.126")
 USERNAME  = os.getenv("CAM_USER", "admin")
 PASSWORD  = os.getenv("CAM_PASS", "admin123")
-# Check your camera's manual / web UI for the exact RTSP path.
-RTSP_URL  = os.getenv("CAM_URL", f"rtsp://{USERNAME}:{PASSWORD}@{CAM_IP}:554/0/av0")
+# Matrix SATATYA: /unicaststream/1 = main (1080p), /unicaststream/2 = sub stream
+RTSP_URL  = os.getenv("CAM_URL", f"rtsp://{USERNAME}:{PASSWORD}@{CAM_IP}:554/unicaststream/1")
 
 SAVE_DIR       = "recordings"          # folder to save .mp4 files
 SPLIT_MINUTES  = 10                    # split a new file every N minutes
