@@ -1,5 +1,23 @@
 # IP Camera Recorder
 
+## Windows app (`camera_app.py`)
+A desktop app with live preview and one-click recording.
+
+- Live preview, auto-reconnect
+- Start / stop recording, snapshots
+- Record only when motion is detected (3 s pre-roll)
+- New file every N minutes, date/time on video
+- Optional auto connect & record when the app starts
+- Settings are remembered (`%APPDATA%\IPCameraRecorder\settings.json`)
+
+**Run from source:** `pip install -r requirements.txt` then `python camera_app.py`
+
+**Make an .exe:** double-click `build_exe.bat` → `dist\IPCameraRecorder.exe`.
+Every push also builds the exe on GitHub: open the repo's **Actions** tab →
+*Build Windows app* → latest run → download **IPCameraRecorder-windows**.
+
+---
+
 A small Python app that reads a live IP camera feed, shows it in a window, and records it to video.
 
 ## Features
