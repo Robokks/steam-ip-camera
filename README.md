@@ -1,5 +1,8 @@
 # IP Camera Recorder
 
+## LabVIEW
+See [LABVIEW.md](LABVIEW.md). LabVIEW calls `labview_camera.py` through the Python Node.
+
 ## Windows app (`camera_app.py`)
 A desktop app with live preview and one-click recording.
 
