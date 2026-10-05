@@ -33,6 +33,22 @@ TCP Close Connection
 | `SNAPSHOT;<folder>;<file name>` | `OK SNAPSHOT;<path>` |
 | `CONNECT` / `DISCONNECT` | `OK CONNECT` / `OK DISCONNECT` |
 
+## File trigger from LabVIEW (no TCP)
+1. In the app, tick **Enable file trigger**. The default file is `C:\CameraTrigger\command.txt`.
+2. In LabVIEW, **Write to Text File** `C:\CameraTrigger\command.txt` with, for example:
+   ```
+   CMD=START
+   FOLDER=C:\Recordings\Batch_17
+   FILE=Part_0042
+   ```
+   or a single line `START;C:\Recordings\Batch_17;Part_0042`. Plain `START` uses the
+   default folder with a date/time file name.
+3. Wait until `command.txt` no longer exists (a loop with **File/Directory Info** or
+   **Check if File or Folder Exists**, every 100 ms, with a timeout of about 5 s).
+4. **Read from Text File** `C:\CameraTrigger\command_reply.txt`. Its first line is the
+   reply, e.g. `OK START;C:\Recordings\Batch_17\Part_0042.mp4`.
+5. To stop, write `STOP` (or `CMD=STOP`) the same way.
+
 ---
 
 # Python Node (no separate app)

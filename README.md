@@ -10,7 +10,7 @@ Send one ASCII command per line. The app answers with one line ending in CR LF:
 | Send | Reply |
 |---|---|
 | `PING` | `OK PONG` |
-| `START` | `OK START;<file path>` (uses the folder and name set in the app) |
+| `START` | `OK START;<Save folder>\\cam_YYYYMMDD_HHMMSS.mp4` (default folder + date/time name) |
 | `START;C:\Recordings;Test_001` | `OK START;C:\Recordings\Test_001.mp4` |
 | `START;;Test_002` | empty field = folder set in the app |
 | `STOP` | `OK STOP;<saved file path>` (sent after the file is closed) |
@@ -28,6 +28,23 @@ Send one ASCII command per line. The app answers with one line ending in CR LF:
 Test from a command prompt: `python tcp_client.py START C:\Recordings Test_001`, then `python tcp_client.py STOP`.
 In LabVIEW: TCP Open Connection → TCP Write `START;C:\Recordings;Test_001\r\n` → TCP Read (mode **CRLF**) → TCP Close Connection.
 See [LABVIEW.md](LABVIEW.md#tcp-remote-control-from-labview).
+
+## File trigger
+Tick **Enable file trigger** in the app and choose the command file (default `C:\CameraTrigger\command.txt`).
+Write the command into that file from LabVIEW, a script or Notepad. Within about half a second the app:
+1. runs it,
+2. writes the result to `command_reply.txt` in the same folder,
+3. **deletes** `command.txt`. A missing file means the command has been taken.
+
+The file can use either format:
+```
+START                              CMD=START
+START;C:\Recordings;Test_001       FOLDER=C:\Recordings
+STOP                               FILE=Test_001
+```
+- `START` with no folder or name saves to the app's **Save folder** with a date/time name.
+- `CMD=STOP` (or just `STOP`) stops recording.
+- Lines starting with `#` are ignored.
 
 ## Windows app (`camera_app.py`)
 A desktop app with live preview and one-click recording.

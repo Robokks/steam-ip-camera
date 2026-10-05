@@ -7,6 +7,7 @@ Live preview of an RTSP IP camera with recording:
   * auto split into N-minute files
   * snapshots, timestamp overlay, auto-reconnect
   * TCP remote control (START/STOP with folder + file name) — see tcp_server.py
+  * file trigger: write a command file, the app runs it — see file_trigger.py
 
 Settings are saved to %APPDATA%\\IPCameraRecorder\\settings.json.
 Build an .exe with build_exe.bat (PyInstaller).
@@ -28,6 +29,7 @@ import cv2
 from PIL import Image, ImageTk
 
 from camera_core import CameraWorker, clean_filename
+from file_trigger import FileTrigger, reply_path_for
 from tcp_server import CommandServer, parse_command
 
 APP_NAME = "IP Camera Recorder"
@@ -54,6 +56,9 @@ DEFAULTS = {
     "file_name": "",
     "tcp_enabled": True,
     "tcp_port": 5000,
+    "file_trigger_enabled": False,
+    "trigger_file": (r"C:\CameraTrigger\command.txt" if sys.platform == "win32"
+                     else os.path.join(os.path.expanduser("~"), "CameraTrigger", "command.txt")),
 }
 
 def load_settings():
@@ -88,6 +93,7 @@ class App(tk.Tk):
         self.worker = None
         self._photo = None
         self.server = None
+        self.trigger = None
         self._commands = queue.Queue()     # TCP thread -> GUI thread
         self._logs = queue.Queue()
 
@@ -98,6 +104,8 @@ class App(tk.Tk):
             self.after(300, self.connect)
         if self.settings["tcp_enabled"]:
             self.after(200, self.start_server)
+        if self.settings["file_trigger_enabled"]:
+            self.after(250, self.start_file_trigger)
 
     # ---- layout ----
     def _build_ui(self):
@@ -175,7 +183,7 @@ class App(tk.Tk):
 
     def _build_tcp_panel(self):
         s = self.settings
-        box = ttk.LabelFrame(self, text="Remote control (TCP)", padding=8)
+        box = ttk.LabelFrame(self, text="Remote control", padding=8)
         box.pack(side=tk.BOTTOM, fill=tk.X, padx=10, pady=(0, 6))
         left = ttk.Frame(box)
         left.pack(side=tk.LEFT, fill=tk.Y)
@@ -189,6 +197,21 @@ class App(tk.Tk):
         self.lbl_tcp.grid(row=2, column=0, columnspan=2, sticky="w", pady=(4, 0))
         ttk.Label(left, text="Commands: START;folder;name  STOP  STATUS  SNAPSHOT  PING",
                   foreground="gray", wraplength=260).grid(row=3, column=0, columnspan=2, sticky="w")
+
+        ttk.Separator(box, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=10)
+        mid = ttk.Frame(box)
+        mid.pack(side=tk.LEFT, fill=tk.Y)
+        self.v_ftrig = tk.BooleanVar(value=s["file_trigger_enabled"])
+        self.v_tfile = tk.StringVar(value=s["trigger_file"])
+        ttk.Checkbutton(mid, text="Enable file trigger", variable=self.v_ftrig,
+                        command=self._ftrig_toggled).grid(row=0, column=0, columnspan=2, sticky="w")
+        ttk.Entry(mid, textvariable=self.v_tfile, width=34).grid(row=1, column=0, sticky="ew", pady=(4, 0))
+        ttk.Button(mid, text="…", width=3, command=self.browse_trigger).grid(row=1, column=1, padx=(4, 0),
+                                                                           pady=(4, 0))
+        self.lbl_ftrig = ttk.Label(mid, text="File trigger off", foreground="gray", wraplength=320)
+        self.lbl_ftrig.grid(row=2, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        ttk.Label(mid, text="File: START;folder;name  or  CMD=START / FOLDER=… / FILE=…",
+                  foreground="gray", wraplength=300).grid(row=3, column=0, columnspan=2, sticky="w")
         self.log = tk.Text(box, height=6, state=tk.DISABLED, font=("Consolas", 9))
         self.log.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(10, 0))
 
@@ -206,6 +229,7 @@ class App(tk.Tk):
             save_dir=self.v_dir.get().strip() or DEFAULTS["save_dir"], split_minutes=max(0, split),
             motion_only=self.v_motion.get(), timestamp=self.v_stamp.get(), auto_record=self.v_auto.get(),
             file_name=self.v_name.get().strip(), tcp_enabled=self.v_tcp.get(),
+            file_trigger_enabled=self.v_ftrig.get(), trigger_file=self.v_tfile.get().strip(),
         )
         try:
             self.settings["tcp_port"] = int(self.v_tcp_port.get())
@@ -271,13 +295,20 @@ class App(tk.Tk):
         else:
             self.start_recording()
 
-    def start_recording(self, folder="", name=""):
-        """Manual button or remote START. Returns the file path."""
+    def start_recording(self, folder="", name="", remote=False):
+        """Manual button or remote START. Returns the file path.
+
+        Manual: uses the File name box (empty = date/time).
+        Remote: uses the name sent with START (none = date/time); the folder
+        defaults to the Save folder box.
+        """
         s = self._collect_settings()
         if not self.worker:
             self.connect()
         self._apply_options()
-        return self.worker.start_recording(folder or s["save_dir"], name or s["file_name"])
+        if not remote:
+            name = name or s["file_name"]
+        return self.worker.start_recording(folder or s["save_dir"], name)
 
     def stop_recording(self):
         """Stop recording (non-blocking for the GUI). Returns the current file path."""
@@ -322,6 +353,37 @@ class App(tk.Tk):
             self.server = None
             self._log("TCP server stopped")
 
+    def _ftrig_toggled(self):
+        if self.v_ftrig.get():
+            self.start_file_trigger()
+        else:
+            self.stop_file_trigger()
+
+    def start_file_trigger(self):
+        self.stop_file_trigger()
+        s = self._collect_settings()
+        if not s["trigger_file"]:
+            return
+        self.trigger = FileTrigger(s["trigger_file"], self._handle_remote, log=self._log)
+        self.trigger.start()
+
+    def stop_file_trigger(self):
+        if self.trigger:
+            self.trigger.stop()
+            self.trigger = None
+            self._log("File trigger stopped")
+
+    def browse_trigger(self):
+        path = filedialog.asksaveasfilename(
+            title="Command file to watch", initialfile=os.path.basename(self.v_tfile.get() or "command.txt"),
+            initialdir=os.path.dirname(self.v_tfile.get()) or os.path.expanduser("~"),
+            defaultextension=".txt", filetypes=[("Text file", "*.txt"), ("All files", "*.*")],
+            confirmoverwrite=False)
+        if path:
+            self.v_tfile.set(os.path.normpath(path))
+            if self.v_ftrig.get():
+                self.start_file_trigger()
+
     def _handle_remote(self, line):
         """Runs on a TCP client thread: hand the command to the GUI thread and wait."""
         done = threading.Event()
@@ -347,7 +409,7 @@ class App(tk.Tk):
         if cmd == "START":
             if w and w.record_on:
                 return f"ERROR ALREADY RECORDING;{w.current_file}"
-            return "OK START;" + self.start_recording(arg[0], arg[1])
+            return "OK START;" + self.start_recording(arg[0], arg[1], remote=True)
         if cmd == "STOP":
             if not w or not w.record_on:
                 return "ERROR NOT RECORDING"
@@ -396,6 +458,15 @@ class App(tk.Tk):
                 self.log.delete("1.0", "100.0")
             self.log.see(tk.END)
             self.log.config(state=tk.DISABLED)
+        trig = self.trigger
+        if trig is None:
+            self.lbl_ftrig.config(text="File trigger off", foreground="gray")
+        elif trig.error:
+            self.lbl_ftrig.config(text=trig.error, foreground="red")
+        else:
+            last = f"  —  last: {trig.last_reply[:40]}" if trig.last_reply else ""
+            self.lbl_ftrig.config(text=f"Watching ({os.path.basename(reply_path_for(trig.path))} = reply){last}",
+                                  foreground="green")
         srv = self.server
         if srv is None:
             self.lbl_tcp.config(text="Server off", foreground="gray")
@@ -461,6 +532,7 @@ class App(tk.Tk):
                 return
         save_settings(self._collect_settings())
         self.stop_server()
+        self.stop_file_trigger()
         self.disconnect()
         self.destroy()
 
